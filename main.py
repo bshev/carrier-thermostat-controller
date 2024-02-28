@@ -172,6 +172,8 @@ def main():
 if __name__ == "__main__":
     logger.info("Starting thermostat monitor")
 
+    main()
+
     schedule.every(15).minutes.do(threaded_job, main)
     schedule.every().day.do(threaded_job, job_monitor)
 
