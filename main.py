@@ -111,6 +111,26 @@ def threaded_job(job_func):
     job_thread = threading.Thread(target=job_func)
     job_thread.start()
 
+def resume_schedule():
+    try:
+        ensure_API_Connection()
+        status = call_get_status()
+
+        df_meta, df_zone1 = parse_status(status)
+
+        system_mode = df_meta["mode"].item()
+        if system_mode is not const.SystemModes.OFF:
+            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
+            logger.info("Resuming schedule.")
+
+
+    except Exception as e:
+        logger.error(e)
+        send_email(
+            "Carrier Thermostat monitor program has halted.",
+            subject="Carrier Thermostat Script Monitor Halted",
+        )
+        raise
 
 def main():
     try:
@@ -164,9 +184,6 @@ def main():
             logger.info(f"Changing cool setpoint to {COOLING_COLD_SETPOINT}")
 
 
-        if system_mode is not const.SystemModes.OFF:
-            APIConnection.resume_schedule(THERMOSTAT_SERIAL,1)
-            logger.info("Resuming schedule.")
 
     except Exception as e:
         logger.error(e)
@@ -181,10 +198,12 @@ def main():
 if __name__ == "__main__":
     logger.info("Starting thermostat monitor")
 
-    main()
+    #main()
+    #resume_schedule()
 
     schedule.every(15).minutes.do(threaded_job, main)
     schedule.every(2).days.do(threaded_job, job_monitor)
+    schedule.every(2).hours.do(threaded_job, resume_schedule)
 
     while True:
         schedule.run_pending()
