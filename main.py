@@ -163,6 +163,10 @@ def main():
 
         if heating_setpoint > HEATING_THRESHOLD:
             logger.warning(f"Heat setpoint above {HEATING_THRESHOLD} at ({heating_setpoint})")
+            APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1,const.ActivityNames.HOME)
+            time.sleep(1)
+            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
+            time.sleep(1)
             APIConnection.set_config_manual_activity(
                 THERMOSTAT_SERIAL,
                 "1",
@@ -174,6 +178,10 @@ def main():
 
         if cooling_setpoint < COOLING_THRESHOLD:
             logger.warning(f"Cool setpoint below {COOLING_THRESHOLD} at ({cooling_setpoint})")
+            APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME)
+            time.sleep(1)
+            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
+            time.sleep(1)
             APIConnection.set_config_manual_activity(
                 THERMOSTAT_SERIAL,
                 "1",
@@ -198,7 +206,7 @@ def main():
 if __name__ == "__main__":
     logger.info("Starting thermostat monitor")
 
-    #main()
+    main()
     #resume_schedule()
 
     schedule.every(15).minutes.do(threaded_job, main)
