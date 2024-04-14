@@ -130,17 +130,19 @@ def main():
         logger.info(f"Current Heat Setpoint: {heating_setpoint}")
         logger.info(f"Current Cool Setpoint: {cooling_setpoint}")
 
+        #logger.info(f"")
+
         logger.debug(f"Current Outdoor Temperature: {outdoor_temperature_sensor}")
 
-        HEATING_THRESHOLD = 75
+        HEATING_THRESHOLD = 72
         COOLING_THRESHOLD = 64
-        HEATING_HEAT_SETPOINT = 73
+        HEATING_HEAT_SETPOINT = 70
         HEATING_COLD_SETPOINT = 78
         COOLING_HEAT_SETPOINT = 60
         COOLING_COLD_SETPOINT = 68
 
         if heating_setpoint > HEATING_THRESHOLD:
-            logger.warning(f"Heat setpoint above 75 at ({heating_setpoint})")
+            logger.warning(f"Heat setpoint above {HEATING_THRESHOLD} at ({heating_setpoint})")
             APIConnection.set_config_manual_activity(
                 THERMOSTAT_SERIAL,
                 "1",
@@ -148,10 +150,10 @@ def main():
                 HEATING_COLD_SETPOINT,
                 const.FanModes.OFF,
             )
-            logger.info("Changing heat setpoint to 73")
+            logger.info(f"Changing heat setpoint to {HEATING_HEAT_SETPOINT}")
 
         if cooling_setpoint < COOLING_THRESHOLD:
-            logger.warning(f"Cool setpoint below 64 at ({cooling_setpoint})")
+            logger.warning(f"Cool setpoint below {COOLING_THRESHOLD} at ({cooling_setpoint})")
             APIConnection.set_config_manual_activity(
                 THERMOSTAT_SERIAL,
                 "1",
@@ -159,7 +161,13 @@ def main():
                 COOLING_COLD_SETPOINT,
                 const.FanModes.OFF,
             )
-            logger.info("Changing cool setpoint to 68")
+            logger.info(f"Changing cool setpoint to {COOLING_COLD_SETPOINT}")
+
+
+        if system_mode is not const.SystemModes.OFF:
+            APIConnection.resume_schedule(THERMOSTAT_SERIAL,1)
+            logger.info("Resuming schedule.")
+
     except Exception as e:
         logger.error(e)
         send_email(
@@ -169,13 +177,14 @@ def main():
         raise
 
 
+
 if __name__ == "__main__":
     logger.info("Starting thermostat monitor")
 
     main()
 
     schedule.every(15).minutes.do(threaded_job, main)
-    schedule.every().day.do(threaded_job, job_monitor)
+    schedule.every(2).days.do(threaded_job, job_monitor)
 
     while True:
         schedule.run_pending()
