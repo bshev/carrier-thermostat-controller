@@ -68,7 +68,8 @@ def parse_status(response):
 
     return df_meta, df_zone1
 
-#Dont forget to set your env variables.
+
+# Dont forget to set your env variables.
 EMAIL_SENDER_ADDRESS = os.getenv("NOTIFICATION_EMAIL_SENDER")
 EMAIL_PASSWORD = os.getenv("NOTIFICATION_EMAIL_PASSWORD")
 EMAIL_INBOX = os.getenv("NOTIFICATION_EMAIL_DESTINATION")
@@ -111,6 +112,7 @@ def threaded_job(job_func):
     job_thread = threading.Thread(target=job_func)
     job_thread.start()
 
+
 def resume_schedule():
     try:
         ensure_API_Connection()
@@ -119,10 +121,26 @@ def resume_schedule():
         df_meta, df_zone1 = parse_status(status)
 
         system_mode = df_meta["mode"].item()
-        if system_mode is not const.SystemModes.OFF:
+        cooling_setpoint = df_zone1["clsp"].item()
+        heating_setpoint = df_zone1["htsp"].item()
+
+        PASSIVE_HEAT_SETPOINT = 65
+        PASSIVE_COOL_SETPOINT = 78
+
+        if system_mode is const.SystemModes.OFF:
+            logger.info("System Off.")
+        elif (
+            system_mode is const.SystemModes.HEAT
+            and heating_setpoint > PASSIVE_HEAT_SETPOINT
+        ):
             APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
             logger.info("Resuming schedule.")
-
+        elif (
+            system_mode is const.SystemModes.COOL
+            and cooling_setpoint < PASSIVE_COOL_SETPOINT
+        ):
+            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
+            logger.info("Resuming schedule.")
 
     except Exception as e:
         logger.error(e)
@@ -131,6 +149,7 @@ def resume_schedule():
             subject="Carrier Thermostat Script Monitor Halted",
         )
         raise
+
 
 def main():
     try:
@@ -150,7 +169,7 @@ def main():
         logger.info(f"Current Heat Setpoint: {heating_setpoint}")
         logger.info(f"Current Cool Setpoint: {cooling_setpoint}")
 
-        #logger.info(f"")
+        # logger.info(f"")
 
         logger.debug(f"Current Outdoor Temperature: {outdoor_temperature_sensor}")
 
@@ -162,8 +181,12 @@ def main():
         COOLING_COLD_SETPOINT = 68
 
         if heating_setpoint > HEATING_THRESHOLD:
-            logger.warning(f"Heat setpoint above {HEATING_THRESHOLD} at ({heating_setpoint})")
-            APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1,const.ActivityNames.HOME)
+            logger.warning(
+                f"Heat setpoint above {HEATING_THRESHOLD} at ({heating_setpoint})"
+            )
+            APIConnection.set_config_hold(
+                THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME
+            )
             time.sleep(1)
             APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
             time.sleep(1)
@@ -177,8 +200,12 @@ def main():
             logger.info(f"Changing heat setpoint to {HEATING_HEAT_SETPOINT}")
 
         if cooling_setpoint < COOLING_THRESHOLD:
-            logger.warning(f"Cool setpoint below {COOLING_THRESHOLD} at ({cooling_setpoint})")
-            APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME)
+            logger.warning(
+                f"Cool setpoint below {COOLING_THRESHOLD} at ({cooling_setpoint})"
+            )
+            APIConnection.set_config_hold(
+                THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME
+            )
             time.sleep(1)
             APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
             time.sleep(1)
@@ -191,8 +218,6 @@ def main():
             )
             logger.info(f"Changing cool setpoint to {COOLING_COLD_SETPOINT}")
 
-
-
     except Exception as e:
         logger.error(e)
         send_email(
@@ -202,12 +227,11 @@ def main():
         raise
 
 
-
 if __name__ == "__main__":
     logger.info("Starting thermostat monitor")
 
     main()
-    #resume_schedule()
+    # resume_schedule()
 
     schedule.every(15).minutes.do(threaded_job, main)
     schedule.every(2).days.do(threaded_job, job_monitor)
