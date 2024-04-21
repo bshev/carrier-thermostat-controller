@@ -127,16 +127,16 @@ def resume_schedule():
         PASSIVE_HEAT_SETPOINT = 65
         PASSIVE_COOL_SETPOINT = 78
 
-        if system_mode is const.SystemModes.OFF:
+        if system_mode == const.SystemModes.OFF.value:
             logger.info("System Off.")
         elif (
-            system_mode is const.SystemModes.HEAT
+            system_mode == const.SystemModes.HEAT.value
             and heating_setpoint > PASSIVE_HEAT_SETPOINT
         ):
             APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
             logger.info("Resuming schedule.")
         elif (
-            system_mode is const.SystemModes.COOL
+            system_mode == const.SystemModes.COOL.value
             and cooling_setpoint < PASSIVE_COOL_SETPOINT
         ):
             APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
