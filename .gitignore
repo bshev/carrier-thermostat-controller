@@ -4,3 +4,9 @@ notebooks/
 .idea/
 
 .DS_Store
+
+*.env
+*.log
+*.sh
+*.pem
+

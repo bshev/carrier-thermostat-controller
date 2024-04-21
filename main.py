@@ -22,7 +22,7 @@ from loguru import logger
 
 logger.remove()
 logger.add(sys.stdout, level="INFO")
-logger.add("main.log", level="INFO", rotation="100 MB")
+logger.add("main.log", level="INFO", rotation="50 MB")
 
 # Dont forget to set api user/pass and thermostat serial in environment variables
 THERMOSTAT_SERIAL = os.getenv("CARRIER_THERMOSTAT_SERIAL")
@@ -134,13 +134,13 @@ def resume_schedule():
             and heating_setpoint > PASSIVE_HEAT_SETPOINT
         ):
             APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-            logger.info("Resuming schedule.")
+            logger.success("Resuming schedule.")
         elif (
             system_mode == const.SystemModes.COOL.value
             and cooling_setpoint < PASSIVE_COOL_SETPOINT
         ):
             APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-            logger.info("Resuming schedule.")
+            logger.success("Resuming schedule.")
 
     except Exception as e:
         logger.error(e)
@@ -197,7 +197,7 @@ def main():
                 HEATING_COLD_SETPOINT,
                 const.FanModes.OFF,
             )
-            logger.info(f"Changing heat setpoint to {HEATING_HEAT_SETPOINT}")
+            logger.success(f"Changing heat setpoint to {HEATING_HEAT_SETPOINT}")
 
         if cooling_setpoint < COOLING_THRESHOLD:
             logger.warning(
@@ -216,7 +216,7 @@ def main():
                 COOLING_COLD_SETPOINT,
                 const.FanModes.OFF,
             )
-            logger.info(f"Changing cool setpoint to {COOLING_COLD_SETPOINT}")
+            logger.success(f"Changing cool setpoint to {COOLING_COLD_SETPOINT}")
 
     except Exception as e:
         logger.error(e)
