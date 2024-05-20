@@ -114,6 +114,7 @@ def threaded_job(job_func):
 
 
 def resume_schedule():
+    logger.info("Checking schedule status.")
     try:
         ensure_API_Connection()
         status = call_get_status()
@@ -121,6 +122,7 @@ def resume_schedule():
         df_meta, df_zone1 = parse_status(status)
 
         system_mode = df_meta["mode"].item()
+        system_activity = df_zone1["currentActivity"].item()
         cooling_setpoint = df_zone1["clsp"].item()
         heating_setpoint = df_zone1["htsp"].item()
 
@@ -133,14 +135,20 @@ def resume_schedule():
             system_mode == const.SystemModes.HEAT.value
             and heating_setpoint > PASSIVE_HEAT_SETPOINT
         ):
-            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-            logger.success("Resuming schedule.")
+            if system_activity == const.ActivityNames.AWAY.value:
+                logger.info("System in Away mode")
+            else:
+                APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
+                logger.success("Resuming schedule.")
         elif (
             system_mode == const.SystemModes.COOL.value
             and cooling_setpoint < PASSIVE_COOL_SETPOINT
         ):
-            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-            logger.success("Resuming schedule.")
+            if system_activity == const.ActivityNames.AWAY.value:
+                logger.info("System in Away mode")
+            else:
+                APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
+                logger.success("Resuming schedule.")
 
     except Exception as e:
         logger.error(e)
@@ -157,14 +165,15 @@ def main():
         status = call_get_status()
 
         df_meta, df_zone1 = parse_status(status)
-
         system_mode = df_meta["mode"].item()
+        system_activity = df_zone1["currentActivity"].item()
         cooling_setpoint = df_zone1["clsp"].item()
         heating_setpoint = df_zone1["htsp"].item()
         current_room_temp = df_zone1["rt"].item()
         outdoor_temperature_sensor = df_meta["oat"].item()
 
         logger.info(f"Current System Mode: {system_mode}")
+        logger.info(f"Current System Activity Mode: {system_activity}")
         logger.info(f"Current Room Temperature: {current_room_temp}")
         logger.info(f"Current Heat Setpoint: {heating_setpoint}")
         logger.info(f"Current Cool Setpoint: {cooling_setpoint}")
@@ -174,7 +183,7 @@ def main():
         logger.debug(f"Current Outdoor Temperature: {outdoor_temperature_sensor}")
 
         HEATING_THRESHOLD = 72
-        COOLING_THRESHOLD = 64
+        COOLING_THRESHOLD = 66
         HEATING_HEAT_SETPOINT = 70
         HEATING_COLD_SETPOINT = 78
         COOLING_HEAT_SETPOINT = 60
