@@ -1,4 +1,4 @@
-# Carrier Smart Thermostat Monitor
+# Carrier Smart Thermostat Monitor 🌡👁️
 
 Script to query the Carrier web API and monitor the status of the home heating/cooling system. This script utilizes an external API wrapper (`carrier_api`).
 
