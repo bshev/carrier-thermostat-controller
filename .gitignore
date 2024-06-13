@@ -1,12 +1,19 @@
+#jupyter
 */.ipynb_checkpoints/
 notebooks/
 
+#PyCharm
 .idea/
+
+#secrets
+*.env
+*.pem
+*.sh
+
+#logs
+*.log
 
 .DS_Store
 
-*.env
-*.log
-*.sh
-*.pem
+
 

@@ -1,9 +1,9 @@
 #!/usr/bin/python
 __author__ = "Brian Shevitski"
 __email__ = "brian.shevitski@gmail.com"
-__version__ = "0.0.0"
-__status__ = "Development"
-__date__ = "2024/02/26"
+__version__ = "1.0.0"
+__status__ = "Production"
+__date__ = "2024/06/13"
 
 
 import os, sys
@@ -24,10 +24,14 @@ logger.remove()
 logger.add(sys.stdout, level="INFO")
 logger.add("main.log", level="INFO", rotation="50 MB")
 
-# Dont forget to set api user/pass and thermostat serial in environment variables
+# Don't forget to set your env variables, currently export all in ~/.bashrc
 THERMOSTAT_SERIAL = os.getenv("CARRIER_THERMOSTAT_SERIAL")
 API_USR = os.getenv("CARRIER_API_USER")
 API_PASS = os.getenv("CARRIER_API_PASSWORD")
+EMAIL_SENDER_ADDRESS = os.getenv("NOTIFICATION_EMAIL_SENDER")
+EMAIL_PASSWORD = os.getenv("NOTIFICATION_EMAIL_PASSWORD")
+EMAIL_INBOX = os.getenv("NOTIFICATION_EMAIL_DESTINATION")
+
 APIConnection = None
 
 
@@ -69,12 +73,6 @@ def parse_status(response):
     return df_meta, df_zone1
 
 
-# Dont forget to set your env variables.
-EMAIL_SENDER_ADDRESS = os.getenv("NOTIFICATION_EMAIL_SENDER")
-EMAIL_PASSWORD = os.getenv("NOTIFICATION_EMAIL_PASSWORD")
-EMAIL_INBOX = os.getenv("NOTIFICATION_EMAIL_DESTINATION")
-
-
 def send_email(message_text, subject):
     global EMAIL_SENDER_ADDRESS
     global EMAIL_PASSWORD
@@ -114,6 +112,10 @@ def threaded_job(job_func):
 
 
 def resume_schedule():
+    """
+    Function to ensure that the thermostat periodically returns to Wake/Home/Sleep pre-programmed
+    cycle, even if thermostat users change temperature or turn off functionality.
+    """
     logger.info("Checking schedule status.")
     try:
         ensure_API_Connection()
@@ -126,8 +128,18 @@ def resume_schedule():
         cooling_setpoint = df_zone1["clsp"].item()
         heating_setpoint = df_zone1["htsp"].item()
 
+        # In HEAT mode (Winter) if the temp is set below 65 hold there.
+        # (conditions not sub-zero, no danger of freezing pipes, etc.)
+        # If the temp is set above 65, make sure to resume schedule.
+
+        # In COOL mode (Summer) if the temp is set above 78, hold there.
+        # (no real use case, at the moment).
+        # If the temp is set below 78, resume schedule.
+
         PASSIVE_HEAT_SETPOINT = 65
         PASSIVE_COOL_SETPOINT = 78
+
+        # If in AWAY mode, do nothing.
 
         if system_mode == const.SystemModes.OFF.value:
             logger.info("System Off.")
@@ -160,6 +172,12 @@ def resume_schedule():
 
 
 def main():
+    """
+    Function to keep AirBnB guests from leaving thermostat at extreme values and breaking HVAC system.
+    Queries Carrier server for thermostat parameters, if heater is too hot, lowers temp.
+    If AC is too cold, raises temp.
+
+    """
     try:
         ensure_API_Connection()
         status = call_get_status()
@@ -182,11 +200,14 @@ def main():
 
         logger.debug(f"Current Outdoor Temperature: {outdoor_temperature_sensor}")
 
+        # COOLING MODE TEMP SETPOINT MUST BE OVER 66, reverts to 68 if turned too low.
+        # HEATING MODE TEMP SETPOINT MUST BE UNDER 72, reverts to 70 if too high.
+
         HEATING_THRESHOLD = 72
         COOLING_THRESHOLD = 66
         HEATING_HEAT_SETPOINT = 70
-        HEATING_COLD_SETPOINT = 78
-        COOLING_HEAT_SETPOINT = 60
+        HEATING_COLD_SETPOINT = 78  # must provide a cold setpoint in heating mode.
+        COOLING_HEAT_SETPOINT = 60  # must provide a heat setpoint in cooling mode.
         COOLING_COLD_SETPOINT = 68
 
         if heating_setpoint > HEATING_THRESHOLD:
@@ -239,12 +260,16 @@ def main():
 if __name__ == "__main__":
     logger.info("Starting thermostat monitor")
 
+    # run main function at start to verify everything is working
     main()
-    # resume_schedule()
 
-    schedule.every(15).minutes.do(threaded_job, main)
-    schedule.every(2).days.do(threaded_job, job_monitor)
-    schedule.every(2).hours.do(threaded_job, resume_schedule)
+    schedule.every(15).minutes.do(threaded_job, main)  # monitor set point
+    schedule.every(2).days.do(
+        threaded_job, job_monitor
+    )  # email to verify process is running
+    schedule.every(2).hours.do(
+        threaded_job, resume_schedule
+    )  # wake/home/sleep mode scheduler
 
     while True:
         schedule.run_pending()
