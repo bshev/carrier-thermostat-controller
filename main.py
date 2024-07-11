@@ -267,7 +267,7 @@ if __name__ == "__main__":
     schedule.every(2).days.do(
         threaded_job, job_monitor
     )  # email to verify process is running
-    schedule.every(1).hours.do(
+    schedule.every(2).hours.do(
         threaded_job, resume_schedule
     )  # wake/home/sleep mode scheduler
 
