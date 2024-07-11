@@ -204,7 +204,7 @@ def main():
         # HEATING MODE TEMP SETPOINT MUST BE UNDER 72, reverts to 70 if too high.
 
         HEATING_THRESHOLD = 72
-        COOLING_THRESHOLD = 66
+        COOLING_THRESHOLD = 67
         HEATING_HEAT_SETPOINT = 70
         HEATING_COLD_SETPOINT = 78  # must provide a cold setpoint in heating mode.
         COOLING_HEAT_SETPOINT = 60  # must provide a heat setpoint in cooling mode.
