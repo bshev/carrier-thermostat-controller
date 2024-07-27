@@ -150,6 +150,8 @@ def resume_schedule():
             if system_activity == const.ActivityNames.AWAY.value:
                 logger.info("System in Away mode")
             else:
+                APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME, None)
+                time.sleep(1) #added this because sometimes the function seems not to work?
                 APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
                 logger.success("Resuming schedule.")
         elif (
@@ -159,6 +161,8 @@ def resume_schedule():
             if system_activity == const.ActivityNames.AWAY.value:
                 logger.info("System in Away mode")
             else:
+                APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME, None)
+                time.sleep(1)
                 APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
                 logger.success("Resuming schedule.")
 
@@ -262,6 +266,7 @@ if __name__ == "__main__":
 
     # run main function at start to verify everything is working
     main()
+    #resume_schedule()
 
     schedule.every(15).minutes.do(threaded_job, main)  # monitor set point
     schedule.every(2).days.do(
