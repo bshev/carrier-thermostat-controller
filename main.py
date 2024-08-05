@@ -207,12 +207,12 @@ def main():
         # COOLING MODE TEMP SETPOINT MUST BE OVER 66, reverts to 68 if turned too low.
         # HEATING MODE TEMP SETPOINT MUST BE UNDER 72, reverts to 70 if too high.
 
-        HEATING_THRESHOLD = 72
-        COOLING_THRESHOLD = 67
+        HEATING_THRESHOLD = 71
+        COOLING_THRESHOLD = 69
         HEATING_HEAT_SETPOINT = 70
         HEATING_COLD_SETPOINT = 78  # must provide a cold setpoint in heating mode.
         COOLING_HEAT_SETPOINT = 60  # must provide a heat setpoint in cooling mode.
-        COOLING_COLD_SETPOINT = 68
+        COOLING_COLD_SETPOINT = 70
 
         if heating_setpoint > HEATING_THRESHOLD:
             logger.warning(
@@ -268,7 +268,7 @@ if __name__ == "__main__":
     main()
     #resume_schedule()
 
-    schedule.every(15).minutes.do(threaded_job, main)  # monitor set point
+    schedule.every(10).minutes.do(threaded_job, main)  # monitor set point
     schedule.every(2).days.do(
         threaded_job, job_monitor
     )  # email to verify process is running
