@@ -22,7 +22,7 @@ from loguru import logger
 
 logger.remove()
 logger.add(sys.stdout, level="INFO")
-logger.add("main.log", level="INFO", rotation="50 MB")
+logger.add("main.log", level="INFO", rotation="10 MB")
 
 # Don't forget to set your env variables, currently export all in ~/.bashrc
 THERMOSTAT_SERIAL = os.getenv("CARRIER_THERMOSTAT_SERIAL")
@@ -88,18 +88,22 @@ def send_email(message_text, subject):
     SERVER_ADDRESS = "smtp.gmail.com"
     TLS_PORT = 587  # 465 if using ssl
 
-    # create the connection
-    server = smtplib.SMTP(SERVER_ADDRESS, TLS_PORT)
-    server.starttls()  # if using ssl this step is not needed
 
-    # send email
-    server.login(
-        EMAIL_SENDER_ADDRESS, EMAIL_PASSWORD
-    )  # login with mail_id and password
-    text = msg.as_string()
-    server.sendmail(EMAIL_SENDER_ADDRESS, EMAIL_INBOX, text)
-    server.quit()
+    try:
+        # create the connection
+        server = smtplib.SMTP(SERVER_ADDRESS, TLS_PORT)
+        server.starttls()  # if using ssl this step is not needed
 
+        # send email
+        server.login(
+            EMAIL_SENDER_ADDRESS, EMAIL_PASSWORD
+        )  # login with mail_id and password
+        text = msg.as_string()
+        server.sendmail(EMAIL_SENDER_ADDRESS, EMAIL_INBOX, text)
+        server.quit()
+
+    except Exception as e:
+        logger.error(e)
 
 def job_monitor():
     message = "Script running"
