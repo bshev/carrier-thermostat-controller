@@ -218,6 +218,23 @@ def main():
         COOLING_HEAT_SETPOINT = 60  # must provide a heat setpoint in cooling mode.
         COOLING_COLD_SETPOINT = 70
 
+        # If system mode is set to auto (idiots), make sure the setpoints are bad.
+        AUTO_HEAT_SETPOINT = 64
+        AUTO_COLD_SETPOINT = 78
+        if system_mode == const.SystemModes.AUTO.value:
+            logger.warning(
+                f"System set to AUTO mode!"
+            )
+            APIConnection.set_config_manual_activity(
+                THERMOSTAT_SERIAL,
+                "1",
+                AUTO_HEAT_SETPOINT,
+                AUTO_COLD_SETPOINT,
+                const.FanModes.OFF,
+            )
+            logger.success(f"Updated system in AUTO mode.")
+
+
         if heating_setpoint > HEATING_THRESHOLD:
             logger.warning(
                 f"Heat setpoint above {HEATING_THRESHOLD} at ({heating_setpoint})"
