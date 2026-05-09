@@ -164,42 +164,16 @@ async def resume_schedule():
     """
     Periodically returns the thermostat to its pre-programmed schedule.
     """
-    logger.info("Resuming schedule.")
+    logger.info("Running periodic schedule resume.")
     try:
         await ensure_API_Connection()
-        # systems = await call_get_status()
-        # system = systems[0]
-        # zone = system.status.zones[0]
-        # system_mode = system.status.mode
-        # system_activity = zone.current_activity.value
-        # cooling_setpoint = zone.cool_set_point
-        # heating_setpoint = zone.heat_set_point
-        # PASSIVE_HEAT_SETPOINT = 65
-        # PASSIVE_COOL_SETPOINT = 78
-        # if system_mode == const.SystemModes.OFF.value:
-        #     logger.info("System Off.")
-        # elif (
-        #     system_mode == const.SystemModes.HEAT.value
-        #     and heating_setpoint > PASSIVE_HEAT_SETPOINT
-        # ):
-        #     if system_activity == const.ActivityTypes.AWAY.value:
-        #         logger.info("System in Away mode")
-        #     else:
-        #         await APIConnection.set_config_hold(THERMOSTAT_SERIAL, "1", const.ActivityTypes.HOME, None)
-        #         await asyncio.sleep(1)
-        #         await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
-        #         logger.success("Resuming schedule.")
-        # elif (
-        #     system_mode == const.SystemModes.COOL.value
-        #     and cooling_setpoint < PASSIVE_COOL_SETPOINT
-        # ):
-        #     if system_activity == const.ActivityTypes.AWAY.value:
-        #         logger.info("System in Away mode")
-        #     else:
-        #         await APIConnection.set_config_hold(THERMOSTAT_SERIAL, "1", const.ActivityTypes.HOME, None)
-        #         await asyncio.sleep(1)
-        #         await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
-        #         logger.success("Resuming schedule.")
+        systems = await call_get_status()
+        if not systems:
+            raise RuntimeError("API returned no data")
+        system = systems[0]
+        if system.status.mode == const.SystemModes.OFF.value:
+            logger.info("System is OFF, skipping schedule resume.")
+            return
         await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
         logger.success("Schedule resumed.")
     except Exception as e:
