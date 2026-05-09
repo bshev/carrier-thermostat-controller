@@ -35,3 +35,4 @@ ENV/
 Thumbs.db
 
 poetry.lock
+*.db
