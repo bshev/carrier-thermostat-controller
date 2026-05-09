@@ -2,9 +2,6 @@
 */.ipynb_checkpoints/
 notebooks/
 
-#PyCharm
-.idea/
-
 #secrets
 *.env
 *.pem
@@ -13,7 +10,28 @@ notebooks/
 #logs
 *.log
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
+Thumbs.db
 
-
-
+poetry.lock

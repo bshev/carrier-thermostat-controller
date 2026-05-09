@@ -1,22 +1,21 @@
 #!/usr/bin/python
 __author__ = "Brian Shevitski"
 __email__ = "brian.shevitski@gmail.com"
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __status__ = "Production"
-__date__ = "2024/06/13"
+__date__ = "2026/05/08"
 
 
+import asyncio
 import os, sys
-import threading
-import schedule
-import time
+import sqlite3
+from datetime import datetime, timezone
+from dotenv import load_dotenv
+import smtplib
+from email.message import EmailMessage
 
 import carrier_api
 from carrier_api import const
-
-import pandas as pd
-import smtplib
-from email.message import EmailMessage
 
 from loguru import logger
 
@@ -24,7 +23,8 @@ logger.remove()
 logger.add(sys.stdout, level="INFO")
 logger.add("main.log", level="INFO", rotation="10 MB")
 
-# Don't forget to set your env variables, currently export all in ~/.bashrc
+load_dotenv()
+
 THERMOSTAT_SERIAL = os.getenv("CARRIER_THERMOSTAT_SERIAL")
 API_USR = os.getenv("CARRIER_API_USER")
 API_PASS = os.getenv("CARRIER_API_PASSWORD")
@@ -32,46 +32,7 @@ EMAIL_SENDER_ADDRESS = os.getenv("NOTIFICATION_EMAIL_SENDER")
 EMAIL_PASSWORD = os.getenv("NOTIFICATION_EMAIL_PASSWORD")
 EMAIL_INBOX = os.getenv("NOTIFICATION_EMAIL_DESTINATION")
 
-APIConnection = None
-
-
-def ensure_API_Connection():
-    global APIConnection
-    if APIConnection is None:
-        try:
-            logger.info("Establishing API connection.")
-            APIConnection = carrier_api.ApiConnection(API_USR, API_PASS)
-        except Exception as e:
-            logger.error(f"Failed to establish API connection {e}.")
-    else:
-        logger.debug("API connection already exists.")
-
-
-def call_get_status():
-    if APIConnection is not None:
-        try:
-            logger.info("Getting status.")
-            response = APIConnection.get_status(THERMOSTAT_SERIAL)
-            return response
-        except Exception as e:
-            logger.error(f"Failed to get status {e}.")
-    else:
-        logger.error("API connection does not exist.")
-
-
-def parse_status(response):
-    logger.debug("parsing status...")
-    df_meta = pd.json_normalize(response).drop(
-        columns=["atom:link", "$.xmlns:atom", "zones.zone"]
-    )
-
-    zone1_json = next(
-        (zone for zone in response["zones"]["zone"] if zone["$"]["id"] == "1"), None
-    )
-    df_zone1 = pd.json_normalize(zone1_json)
-
-    return df_meta, df_zone1
-
+DB_PATH = "thermostat.db"
 
 def send_email(message_text, subject):
     global EMAIL_SENDER_ADDRESS
@@ -86,217 +47,241 @@ def send_email(message_text, subject):
     msg.set_content(message_text)
 
     SERVER_ADDRESS = "smtp.gmail.com"
-    TLS_PORT = 587  # 465 if using ssl
+    TLS_PORT = 587
+
+    server = smtplib.SMTP(SERVER_ADDRESS, TLS_PORT)
+    server.starttls()
+    server.login(EMAIL_SENDER_ADDRESS, EMAIL_PASSWORD)
+    text = msg.as_string()
+    server.sendmail(EMAIL_SENDER_ADDRESS, EMAIL_INBOX, text)
+    server.quit()
 
 
-    try:
-        # create the connection
-        server = smtplib.SMTP(SERVER_ADDRESS, TLS_PORT)
-        server.starttls()  # if using ssl this step is not needed
-
-        # send email
-        server.login(
-            EMAIL_SENDER_ADDRESS, EMAIL_PASSWORD
-        )  # login with mail_id and password
-        text = msg.as_string()
-        server.sendmail(EMAIL_SENDER_ADDRESS, EMAIL_INBOX, text)
-        server.quit()
-
-    except Exception as e:
-        logger.error(e)
-
-def job_monitor():
-    message = "Script running"
-    send_email(message, subject="Carrier Thermostat Script Monitor")
-
-
-def threaded_job(job_func):
-    job_thread = threading.Thread(target=job_func)
-    job_thread.start()
-
-
-def resume_schedule():
-    """
-    Function to ensure that the thermostat periodically returns to Wake/Home/Sleep pre-programmed
-    cycle, even if thermostat users change temperature or turn off functionality.
-    """
-    logger.info("Checking schedule status.")
-    try:
-        ensure_API_Connection()
-        status = call_get_status()
-
-        df_meta, df_zone1 = parse_status(status)
-
-        system_mode = df_meta["mode"].item()
-        system_activity = df_zone1["currentActivity"].item()
-        cooling_setpoint = df_zone1["clsp"].item()
-        heating_setpoint = df_zone1["htsp"].item()
-
-        # In HEAT mode (Winter) if the temp is set below 65 hold there.
-        # (conditions not sub-zero, no danger of freezing pipes, etc.)
-        # If the temp is set above 65, make sure to resume schedule.
-
-        # In COOL mode (Summer) if the temp is set above 78, hold there.
-        # (no real use case, at the moment).
-        # If the temp is set below 78, resume schedule.
-
-        PASSIVE_HEAT_SETPOINT = 65
-        PASSIVE_COOL_SETPOINT = 78
-
-        # If in AWAY mode, do nothing.
-
-        if system_mode == const.SystemModes.OFF.value:
-            logger.info("System Off.")
-        elif (
-            system_mode == const.SystemModes.HEAT.value
-            and heating_setpoint > PASSIVE_HEAT_SETPOINT
-        ):
-            if system_activity == const.ActivityNames.AWAY.value:
-                logger.info("System in Away mode")
-            else:
-                APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME, None)
-                time.sleep(1) #added this because sometimes the function seems not to work?
-                APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-                logger.success("Resuming schedule.")
-        elif (
-            system_mode == const.SystemModes.COOL.value
-            and cooling_setpoint < PASSIVE_COOL_SETPOINT
-        ):
-            if system_activity == const.ActivityNames.AWAY.value:
-                logger.info("System in Away mode")
-            else:
-                APIConnection.set_config_hold(THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME, None)
-                time.sleep(1)
-                APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-                logger.success("Resuming schedule.")
-
-    except Exception as e:
-        logger.error(e)
-        send_email(
-            "Carrier Thermostat monitor program has halted.",
-            subject="Carrier Thermostat Script Monitor Halted",
+def init_db():
+    con = sqlite3.connect(DB_PATH)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS readings (
+            ts           TEXT NOT NULL,
+            room_temp    REAL,
+            heat_sp      REAL,
+            cool_sp      REAL,
+            outdoor_temp REAL,
+            mode         TEXT,
+            activity     TEXT
         )
-        raise
+    """)
+    con.commit()
+    con.close()
 
 
-def main():
+def log_reading(system):
+    zone = system.status.zones[0]
+    ts = datetime.now(timezone.utc).isoformat()
+    con = sqlite3.connect(DB_PATH)
+    con.execute(
+        "INSERT INTO readings VALUES (?,?,?,?,?,?,?)",
+        (
+            ts,
+            zone.temperature,
+            zone.heat_set_point,
+            zone.cool_set_point,
+            system.status.outdoor_temperature,
+            system.status.mode,
+            zone.current_activity.value,
+        ),
+    )
+    con.commit()
+    con.close()
+
+APIConnection = None
+api_failure_since = None  # datetime of first consecutive connection failure
+api_outage_alerted = False  # whether the 24-hour alert has been sent this outage
+
+async def ensure_API_Connection():
+    global APIConnection, api_failure_since, api_outage_alerted
+    if APIConnection is None:
+        try:
+            logger.info("Establishing API connection.")
+            APIConnection = carrier_api.ApiConnectionGraphql(API_USR, API_PASS)
+            await APIConnection.login()
+            # Reset failure tracking on successful connection
+            api_failure_since = None
+            api_outage_alerted = False
+        except Exception as e:
+            logger.error(f"Failed to establish API connection {e}.")
+            now = datetime.now(timezone.utc)
+            if api_failure_since is None:
+                api_failure_since = now
+            elif not api_outage_alerted:
+                hours_down = (now - api_failure_since).total_seconds() / 3600
+                if hours_down >= 24:
+                    try:
+                        send_email(
+                            f"Carrier API has been unreachable for {hours_down:.1f} hours. "
+                            f"First failure: {api_failure_since.isoformat()}",
+                            subject="Carrier Thermostat API Unreachable 24h",
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send outage email: {e}")
+                    api_outage_alerted = True
+    else:
+        logger.debug("API connection already exists.")
+
+
+async def call_get_status():
+    global APIConnection
+    if APIConnection is not None:
+        try:
+            logger.info("Getting status.")
+            systems = await APIConnection.load_data()
+            return systems
+        except Exception as e:
+            logger.error(f"Failed to get status {e}.")
+            APIConnection = None  # force reconnect attempt next cycle
+    else:
+        logger.error("API connection does not exist.")
+
+
+async def get_thermostat_data():
+    await ensure_API_Connection()
+    systems = await call_get_status()
+    if not systems:
+        raise RuntimeError("API returned no data")
+    system = systems[0]
+    zone = system.status.zones[0]
+    return {
+        "system": system,
+        "system_mode": system.status.mode,
+        "system_activity": zone.current_activity.value,
+        "heating_setpoint": zone.heat_set_point,
+        "cooling_setpoint": zone.cool_set_point,
+        "room_temp": zone.temperature,
+        "outdoor_temp": system.status.outdoor_temperature,
+    }
+
+
+async def resume_schedule():
     """
-    Function to keep AirBnB guests from leaving thermostat at extreme values and breaking HVAC system.
-    Queries Carrier server for thermostat parameters, if heater is too hot, lowers temp.
-    If AC is too cold, raises temp.
+    Periodically returns the thermostat to its pre-programmed schedule.
+    """
+    logger.info("Resuming schedule.")
+    try:
+        await ensure_API_Connection()
+        # systems = await call_get_status()
+        # system = systems[0]
+        # zone = system.status.zones[0]
+        # system_mode = system.status.mode
+        # system_activity = zone.current_activity.value
+        # cooling_setpoint = zone.cool_set_point
+        # heating_setpoint = zone.heat_set_point
+        # PASSIVE_HEAT_SETPOINT = 65
+        # PASSIVE_COOL_SETPOINT = 78
+        # if system_mode == const.SystemModes.OFF.value:
+        #     logger.info("System Off.")
+        # elif (
+        #     system_mode == const.SystemModes.HEAT.value
+        #     and heating_setpoint > PASSIVE_HEAT_SETPOINT
+        # ):
+        #     if system_activity == const.ActivityTypes.AWAY.value:
+        #         logger.info("System in Away mode")
+        #     else:
+        #         await APIConnection.set_config_hold(THERMOSTAT_SERIAL, "1", const.ActivityTypes.HOME, None)
+        #         await asyncio.sleep(1)
+        #         await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
+        #         logger.success("Resuming schedule.")
+        # elif (
+        #     system_mode == const.SystemModes.COOL.value
+        #     and cooling_setpoint < PASSIVE_COOL_SETPOINT
+        # ):
+        #     if system_activity == const.ActivityTypes.AWAY.value:
+        #         logger.info("System in Away mode")
+        #     else:
+        #         await APIConnection.set_config_hold(THERMOSTAT_SERIAL, "1", const.ActivityTypes.HOME, None)
+        #         await asyncio.sleep(1)
+        #         await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
+        #         logger.success("Resuming schedule.")
+        await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
+        logger.success("Schedule resumed.")
+    except Exception as e:
+        logger.error(e)
 
+
+async def main():
+    """
+    Keeps AirBnB guests from leaving the thermostat at extreme values.
+    Queries Carrier server for thermostat parameters; resumes schedule if setpoints are out of range.
     """
     try:
-        ensure_API_Connection()
-        status = call_get_status()
+        data = await get_thermostat_data()
+        system_mode = data["system_mode"]
+        system_activity = data["system_activity"]
+        heating_setpoint = data["heating_setpoint"]
+        cooling_setpoint = data["cooling_setpoint"]
+        current_room_temp = data["room_temp"]
+        outdoor_temperature_sensor = data["outdoor_temp"]
 
-        df_meta, df_zone1 = parse_status(status)
-        system_mode = df_meta["mode"].item()
-        system_activity = df_zone1["currentActivity"].item()
-        cooling_setpoint = df_zone1["clsp"].item()
-        heating_setpoint = df_zone1["htsp"].item()
-        current_room_temp = df_zone1["rt"].item()
-        outdoor_temperature_sensor = df_meta["oat"].item()
+        log_reading(data["system"])
 
         logger.info(f"Current System Mode: {system_mode}")
         logger.info(f"Current System Activity Mode: {system_activity}")
         logger.info(f"Current Room Temperature: {current_room_temp}")
         logger.info(f"Current Heat Setpoint: {heating_setpoint}")
         logger.info(f"Current Cool Setpoint: {cooling_setpoint}")
-
-        # logger.info(f"")
-
         logger.debug(f"Current Outdoor Temperature: {outdoor_temperature_sensor}")
 
-        # COOLING MODE TEMP SETPOINT MUST BE OVER 66, reverts to 68 if turned too low.
-        # HEATING MODE TEMP SETPOINT MUST BE UNDER 72, reverts to 70 if too high.
+        if system_mode == const.SystemModes.OFF.value:
+            logger.info("System is OFF, skipping setpoint check.")
+            return
+
+        if system_activity == const.ActivityTypes.AWAY.value:
+            logger.info("System is in AWAY activity, skipping setpoint check.")
+            return
 
         HEATING_THRESHOLD = 71
         COOLING_THRESHOLD = 69
-        HEATING_HEAT_SETPOINT = 70
-        HEATING_COLD_SETPOINT = 78  # must provide a cold setpoint in heating mode.
-        COOLING_HEAT_SETPOINT = 60  # must provide a heat setpoint in cooling mode.
-        COOLING_COLD_SETPOINT = 70
 
-        # If system mode is set to auto (idiots), make sure the setpoints are bad.
-        AUTO_HEAT_SETPOINT = 64
-        AUTO_COLD_SETPOINT = 78
         if system_mode == const.SystemModes.AUTO.value:
+            logger.warning("System set to AUTO mode, resuming schedule.")
+            await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
+            logger.success("Schedule resumed (AUTO mode).")
+        elif heating_setpoint > HEATING_THRESHOLD:
             logger.warning(
-                f"System set to AUTO mode!"
+                f"Heat setpoint above {HEATING_THRESHOLD} at ({heating_setpoint}), resuming schedule."
             )
-            APIConnection.set_config_manual_activity(
-                THERMOSTAT_SERIAL,
-                "1",
-                AUTO_HEAT_SETPOINT,
-                AUTO_COLD_SETPOINT,
-                const.FanModes.OFF,
-            )
-            logger.success(f"Updated system in AUTO mode.")
-
-
-        if heating_setpoint > HEATING_THRESHOLD:
+            await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
+            logger.success("Schedule resumed (heat setpoint too high).")
+        elif cooling_setpoint < COOLING_THRESHOLD:
             logger.warning(
-                f"Heat setpoint above {HEATING_THRESHOLD} at ({heating_setpoint})"
+                f"Cool setpoint below {COOLING_THRESHOLD} at ({cooling_setpoint}), resuming schedule."
             )
-            APIConnection.set_config_hold(
-                THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME
-            )
-            time.sleep(1)
-            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-            time.sleep(1)
-            APIConnection.set_config_manual_activity(
-                THERMOSTAT_SERIAL,
-                "1",
-                HEATING_HEAT_SETPOINT,
-                HEATING_COLD_SETPOINT,
-                const.FanModes.OFF,
-            )
-            logger.success(f"Changing heat setpoint to {HEATING_HEAT_SETPOINT}")
-
-        if cooling_setpoint < COOLING_THRESHOLD:
-            logger.warning(
-                f"Cool setpoint below {COOLING_THRESHOLD} at ({cooling_setpoint})"
-            )
-            APIConnection.set_config_hold(
-                THERMOSTAT_SERIAL, 1, const.ActivityNames.HOME
-            )
-            time.sleep(1)
-            APIConnection.resume_schedule(THERMOSTAT_SERIAL, 1)
-            time.sleep(1)
-            APIConnection.set_config_manual_activity(
-                THERMOSTAT_SERIAL,
-                "1",
-                COOLING_HEAT_SETPOINT,
-                COOLING_COLD_SETPOINT,
-                const.FanModes.OFF,
-            )
-            logger.success(f"Changing cool setpoint to {COOLING_COLD_SETPOINT}")
+            await APIConnection.resume_schedule(THERMOSTAT_SERIAL, "1")
+            logger.success("Schedule resumed (cool setpoint too low).")
 
     except Exception as e:
         logger.error(e)
-        send_email(
-            "Carrier Thermostat monitor program has halted.",
-            subject="Carrier Thermostat Script Monitor Halted",
-        )
-        raise
+
+
+async def run_main_loop():
+    while True:
+        await main()
+        await asyncio.sleep(600)  # every 10 minutes
+
+
+async def run_resume_loop():
+    while True:
+        await resume_schedule()
+        await asyncio.sleep(28800)  # every 8 hours
+
+
+async def run():
+    init_db()
+    await ensure_API_Connection()
+    await asyncio.gather(
+        run_main_loop(),
+        run_resume_loop(),
+    )
 
 
 if __name__ == "__main__":
     logger.info("Starting thermostat monitor")
-
-    # run main function at start to verify everything is working
-    main()
-    #resume_schedule()
-
-    schedule.every(10).minutes.do(threaded_job, main)  # monitor set point
-    schedule.every(2).days.do(
-        threaded_job, job_monitor
-    )  # email to verify process is running
-    schedule.every(2).hours.do(
-        threaded_job, resume_schedule
-    )  # wake/home/sleep mode scheduler
-
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    asyncio.run(run())
